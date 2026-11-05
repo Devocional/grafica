@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 150 14% 97%;
+    --foreground: 163 24% 14%;
+    --card: 0 0% 100%;
+    --primary: 169 66% 25%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 150 15% 94%;
+    --muted-foreground: 160 7% 43%;
+    --border: 150 12% 89%;
+    --destructive: 0 68% 43%;
+  }
+  * { @apply border-border; }
+  body { @apply m-0 bg-background font-sans text-foreground antialiased; }
+  :focus-visible { @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background; }
+  ::selection { @apply bg-primary/15 text-foreground; }
+}
