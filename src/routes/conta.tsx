@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 import { LogOut, ShieldCheck } from 'lucide-react';
 import { WorkspacePage } from '@/components/workspace-page';
+import { PasswordChangeForm } from '@/components/password-change-form';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
@@ -13,7 +14,7 @@ function AccountPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'recover'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -60,6 +61,19 @@ function AccountPage() {
     }
     setBusy(true);
     try {
+      if (mode === 'recover') {
+        const { error: recoveryError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: new URL('/recuperar-senha', window.location.origin).toString(),
+        });
+        if (recoveryError) {
+          setError('Não foi possível solicitar a recuperação. Aguarde alguns instantes e tente novamente.');
+          return;
+        }
+        setPassword('');
+        setConfirmation('');
+        setMessage('Se houver uma conta elegível para este e-mail, você receberá um link para definir uma nova senha. Confira também a pasta de spam.');
+        return;
+      }
       if (mode === 'signup') {
         const { data, error: authError } = await supabase.auth.signUp({ email: email.trim(), password });
         if (authError) {
@@ -113,7 +127,7 @@ function AccountPage() {
   return (
     <WorkspacePage title="Minha conta" description="Entre com sua conta ou crie um cadastro para acessar sua sessão.">
       <Card className="mx-auto w-full max-w-lg" aria-busy={loading || busy}>
-        <div className="mb-6 flex items-center gap-3"><span className="rounded-xl bg-primary/10 p-3 text-primary"><ShieldCheck className="h-6 w-6" /></span><h2 className="text-xl font-semibold">{session ? 'Sessão ativa' : mode === 'login' ? 'Entrar na conta' : 'Criar conta'}</h2></div>
+        <div className="mb-6 flex items-center gap-3"><span className="rounded-xl bg-primary/10 p-3 text-primary"><ShieldCheck className="h-6 w-6" /></span><h2 className="text-xl font-semibold">{session ? 'Sessão ativa' : mode === 'recover' ? 'Recuperar senha' : mode === 'login' ? 'Entrar na conta' : 'Criar conta'}</h2></div>
         {error && <p role="alert" className="mb-5 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
         {message && <p role="status" className="mb-5 rounded-xl bg-primary/10 p-3 text-sm text-primary">{message}</p>}
         {loading ? <p role="status" className="py-8 text-center text-sm text-muted-foreground">Carregando sua sessão...</p> : session ? (
@@ -121,13 +135,15 @@ function AccountPage() {
         ) : (
           <form onSubmit={submit} className="space-y-5">
             <label htmlFor="email" className="block text-sm font-medium">E-mail<input id="email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} className={inputClass} /></label>
-            <label htmlFor="password" className="block text-sm font-medium">Senha<input id="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'signup' ? 6 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} className={inputClass} /></label>
+            {mode === 'recover' ? <p className="text-sm leading-relaxed text-muted-foreground">Informe o e-mail da sua conta para receber um link de recuperação de senha.</p> : <label htmlFor="password" className="block text-sm font-medium">Senha<input id="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'signup' ? 6 : undefined} value={password} onChange={(event) => setPassword(event.target.value)} disabled={busy} className={inputClass} /></label>}
             {mode === 'signup' && <label htmlFor="confirmation" className="block text-sm font-medium">Confirmar senha<input id="confirmation" type="password" autoComplete="new-password" required minLength={6} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} disabled={busy} className={inputClass} /><span className="mt-2 block text-xs font-normal text-muted-foreground">Use ao menos 6 caracteres, respeitando a política de senha do serviço.</span></label>}
-            <Button type="submit" disabled={busy || !supabase} className="w-full">{busy ? 'Aguarde...' : mode === 'login' ? 'Entrar' : 'Criar conta'}</Button>
-            <Button variant="ghost" className="w-full" disabled={busy} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setPassword(''); setConfirmation(''); setError(''); setMessage(''); }}>{mode === 'login' ? 'Ainda não tenho conta' : 'Já tenho conta'}</Button>
+            <Button type="submit" disabled={busy || !supabase} className="w-full">{busy ? 'Aguarde...' : mode === 'recover' ? 'Enviar link de recuperação' : mode === 'login' ? 'Entrar' : 'Criar conta'}</Button>
+            {mode === 'login' && <Button type="button" variant="ghost" className="w-full" disabled={busy} onClick={() => { setMode('recover'); setPassword(''); setConfirmation(''); setError(''); setMessage(''); }}>Esqueci minha senha</Button>}
+            <Button type="button" variant="ghost" className="w-full" disabled={busy} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setPassword(''); setConfirmation(''); setError(''); setMessage(''); }}>{mode === 'login' ? 'Ainda não tenho conta' : mode === 'recover' ? 'Voltar para o login' : 'Já tenho conta'}</Button>
           </form>
         )}
       </Card>
+      {!loading && session && <Card className="mx-auto w-full max-w-lg"><h2 className="text-xl font-semibold">Alterar senha</h2><p className="mb-6 mt-2 text-sm text-muted-foreground">Atualize a senha usada para entrar na sua conta.</p><PasswordChangeForm key={session.user.id} /></Card>}
     </WorkspacePage>
   );
 }
