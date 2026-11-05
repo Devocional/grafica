@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
+import { AppNavigation } from '@/components/app-navigation';
 
 export const Route = createFileRoute('/')({ component: Dashboard });
 
@@ -39,27 +40,15 @@ function Dashboard() {
     const currentRequest = ++requestId.current;
     setLoading(true);
     try {
-      if (!supabase) throw new Error('connection');
-      const [company, profiles, roles] = await Promise.all([
-        supabase.from('company_settings').select('company_name, cnpj, phone, email, address, city, state, updated_at').eq('id', 1).maybeSingle(),
-        supabase.from('profiles').select('id', { count: 'exact', head: true }),
-        supabase.from('user_roles').select('id', { count: 'exact', head: true }),
-      ]);
+      if (!supabase) throw new Error('auth-unavailable');
+      const { error } = await supabase.auth.getSession();
+      if (error) throw error;
       if (currentRequest !== requestId.current) return;
-      const errors: string[] = [];
-      if (company.error) errors.push('Não foi possível consultar os dados da empresa.');
-      if (profiles.error) errors.push('Não foi possível consultar os perfis.');
-      if (roles.error) errors.push('Não foi possível consultar as atribuições de acesso.');
-      setData({
-        company: company.error ? null : company.data,
-        profiles: profiles.error ? null : profiles.count,
-        roles: roles.error ? null : roles.count,
-        errors,
-        updatedAt: errors.length === 3 ? null : new Date(),
-      });
+      // O schema public está vazio. Não consultar tabelas comerciais inexistentes.
+      setData({ ...initialData, updatedAt: new Date() });
     } catch {
       if (currentRequest !== requestId.current) return;
-      setData({ ...initialData, errors: ['Não foi possível conectar ao banco de dados. Tente atualizar novamente.'] });
+      setData({ ...initialData, errors: ['Não foi possível verificar a sessão. Tente novamente na página Minha conta.'] });
     } finally {
       if (currentRequest === requestId.current) setLoading(false);
     }
@@ -67,11 +56,7 @@ function Dashboard() {
 
   useEffect(() => {
     void load();
-    const subscription = supabase?.auth.onAuthStateChange(() => { void load(); });
-    return () => {
-      requestId.current += 1;
-      subscription?.data.subscription.unsubscribe();
-    };
+    return () => { requestId.current += 1; };
   }, [load]);
 
   const companyName = data.company?.company_name || 'Indiana Bella Uniformes';
@@ -83,9 +68,9 @@ function Dashboard() {
   const updatedDate = companyUpdatedAt && !Number.isNaN(companyUpdatedAt.getTime()) ? companyUpdatedAt.toLocaleDateString('pt-BR') : '—';
 
   const stats = [
-    { title: 'Perfis cadastrados', value: data.profiles === null ? '—' : numberFormat.format(data.profiles), detail: 'Perfis disponíveis para sua sessão', icon: Users, color: 'bg-primary/10 text-primary' },
-    { title: 'Atribuições de acesso', value: data.roles === null ? '—' : numberFormat.format(data.roles), detail: 'Registros de permissões disponíveis', icon: ShieldCheck, color: 'bg-violet-50 text-violet-700' },
-    { title: 'Cadastro da empresa', value: data.company ? `${completion}%` : '—', detail: data.company ? `${filled} de 7 informações preenchidas` : 'Aguardando dados da empresa', icon: Building2, color: 'bg-amber-50 text-amber-700' },
+    { title: 'Perfis cadastrados', value: data.profiles === null ? '—' : numberFormat.format(data.profiles), detail: 'Aguardando estrutura de perfis', icon: Users, color: 'bg-primary/10 text-primary' },
+    { title: 'Atribuições de acesso', value: data.roles === null ? '—' : numberFormat.format(data.roles), detail: 'Aguardando estrutura de permissões', icon: ShieldCheck, color: 'bg-violet-50 text-violet-700' },
+    { title: 'Cadastro da empresa', value: data.company ? `${completion}%` : '—', detail: data.company ? `${filled} de 7 informações preenchidas` : 'Aguardando estrutura da empresa', icon: Building2, color: 'bg-amber-50 text-amber-700' },
   ];
 
   return (
@@ -97,10 +82,7 @@ function Dashboard() {
           <div className="min-w-0"><p className="truncate text-sm font-bold" title={companyName}>{companyName}</p><p className="mt-1 text-xs text-muted-foreground">Painel de gestão</p></div>
         </div>
         <p className="mb-3 mt-12 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
-        <nav aria-label="Navegação principal" className="space-y-2">
-          <a href="#conteudo" aria-current="page" className="flex items-center gap-3 rounded-xl bg-primary/10 px-3 py-3 text-sm font-semibold text-primary"><LayoutDashboard className="h-4 w-4" />Dashboard<span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" /></a>
-          <a href="#empresa" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Building2 className="h-4 w-4" />Minha empresa</a>
-        </nav>
+        <AppNavigation vertical />
         <div className="mt-auto rounded-2xl border bg-background p-4">
           <ShieldCheck className="mb-3 h-5 w-5 text-primary" />
           <p className="text-sm font-semibold">Informações protegidas</p>
@@ -114,11 +96,12 @@ function Dashboard() {
           <div className="flex items-center gap-2 text-sm"><LayoutDashboard className="h-4 w-4 text-primary" /><span className="hidden text-muted-foreground sm:inline">Visão geral</span><span className="hidden text-border sm:inline">/</span><span className="font-medium">Dashboard</span></div>
           <div className="flex items-center gap-3"><span className="hidden text-xs capitalize text-muted-foreground md:inline">{new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}</span><span className="flex h-9 w-9 items-center justify-center rounded-full border bg-muted text-xs font-semibold text-primary" aria-label="Indiana Bella">IB</span></div>
         </header>
+        <div className="border-b bg-card px-5 py-3 lg:hidden"><AppNavigation /></div>
 
         <main id="conteudo" className="mx-auto max-w-7xl scroll-mt-6 space-y-7 px-5 py-8 sm:px-8 sm:py-10" aria-busy={loading}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary">Seu negócio, em um só lugar</p><h1 className="text-3xl font-bold tracking-tight">Dashboard</h1><p className="mt-2 text-sm text-muted-foreground">Acompanhe as informações e a organização da sua empresa.</p></div>
-            <Button variant="outline" onClick={() => void load()} disabled={loading}><RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />{loading ? 'Atualizando...' : 'Atualizar dados'}</Button>
+            <Button variant="outline" onClick={() => void load()} disabled={loading}><RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />{loading ? 'Verificando...' : 'Verificar sessão'}</Button>
           </div>
 
           <section className="relative overflow-hidden rounded-2xl bg-primary p-6 text-primary-foreground sm:p-8" aria-labelledby="welcome-title">
@@ -135,16 +118,16 @@ function Dashboard() {
           <div className="grid items-start gap-6 xl:grid-cols-[1.6fr_1fr]">
             <Card id="empresa" className="scroll-mt-6">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-5"><div><h2 className="text-lg font-semibold">Minha empresa</h2><p className="mt-1 text-xs text-muted-foreground">Informações institucionais e de contato</p></div><Building2 className="h-5 w-5 text-primary" /></div>
-              {loading ? <div className="mt-6 space-y-5" aria-label="Carregando empresa">{[1, 2, 3].map((row) => <div key={row} className="h-12 animate-pulse rounded-xl bg-muted" />)}</div> : data.company ? <div className="pt-6"><h3 className="text-xl font-semibold">{data.company.company_name}</h3><p className="mt-1 text-xs text-muted-foreground">CNPJ: {data.company.cnpj || 'Não informado'}</p><dl className="mt-7 grid gap-6 sm:grid-cols-2"><Contact icon={Phone} label="Telefone" value={data.company.phone} /><Contact icon={Mail} label="E-mail" value={data.company.email} /><Contact icon={MapPin} label="Endereço" value={data.company.address} /><Contact icon={Building2} label="Cidade / Estado" value={location} /></dl><p className="mt-7 border-t pt-4 text-xs text-muted-foreground">Última alteração do cadastro: {updatedDate}</p></div> : <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center"><Building2 className="h-9 w-9 text-muted-foreground/60" /><h3 className="font-medium">Dados da empresa indisponíveis</h3><p className="max-w-sm text-sm leading-relaxed text-muted-foreground">Nenhum cadastro foi retornado para esta sessão. As informações aparecerão aqui quando estiverem disponíveis.</p></div>}
+              {loading ? <div className="mt-6 space-y-5" aria-label="Carregando empresa">{[1, 2, 3].map((row) => <div key={row} className="h-12 animate-pulse rounded-xl bg-muted" />)}</div> : data.company ? <div className="pt-6"><h3 className="text-xl font-semibold">{data.company.company_name}</h3><p className="mt-1 text-xs text-muted-foreground">CNPJ: {data.company.cnpj || 'Não informado'}</p><dl className="mt-7 grid gap-6 sm:grid-cols-2"><Contact icon={Phone} label="Telefone" value={data.company.phone} /><Contact icon={Mail} label="E-mail" value={data.company.email} /><Contact icon={MapPin} label="Endereço" value={data.company.address} /><Contact icon={Building2} label="Cidade / Estado" value={location} /></dl><p className="mt-7 border-t pt-4 text-xs text-muted-foreground">Última alteração do cadastro: {updatedDate}</p></div> : <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-center"><Building2 className="h-9 w-9 text-muted-foreground/60" /><h3 className="font-medium">Dados da empresa indisponíveis</h3><p className="max-w-sm text-sm leading-relaxed text-muted-foreground">O banco conectado ainda não possui tabelas para o cadastro da empresa. Os dados serão exibidos após a implementação dessa estrutura.</p></div>}
             </Card>
 
             <div className="space-y-6">
               <Card><div className="flex items-center gap-3"><span className="rounded-xl bg-primary/10 p-2.5 text-primary"><CheckCircle2 className="h-5 w-5" /></span><h2 className="font-semibold">Qualidade do cadastro</h2></div><p className="mt-4 text-sm leading-relaxed text-muted-foreground">Mantenha as informações da empresa completas para facilitar o contato e a identificação.</p><div className="mb-2 mt-5 flex justify-between text-xs"><span className="text-muted-foreground">Preenchimento</span><span className="font-semibold">{!loading && data.company ? `${completion}%` : '—'}</span></div><div role="progressbar" aria-label="Preenchimento do cadastro" aria-valuemin={0} aria-valuemax={100} aria-valuenow={!loading && data.company ? completion : undefined} className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${!loading && data.company ? completion : 0}%` }} /></div><p className="mt-3 text-xs text-muted-foreground">Nome, CNPJ, telefone, e-mail e endereço completo.</p></Card>
-              <Card className="bg-muted/40 shadow-none"><Database className="mb-3 h-5 w-5 text-muted-foreground" /><h2 className="text-sm font-semibold">Dados reais, sem estimativas</h2><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Os indicadores consultam os registros disponíveis no banco. Um perfil pode ter mais de uma atribuição de acesso. As contagens podem variar conforme as permissões da sessão.</p></Card>
+              <Card className="bg-muted/40 shadow-none"><Database className="mb-3 h-5 w-5 text-muted-foreground" /><h2 className="text-sm font-semibold">Estrutura comercial pendente</h2><p className="mt-2 text-xs leading-relaxed text-muted-foreground">O banco conectado está sem tabelas no schema public. Por isso, os indicadores permanecem sem valores, em vez de mostrar contagens fictícias. Login e cadastro estão disponíveis em Minha conta pelo serviço de autenticação.</p></Card>
             </div>
           </div>
 
-          <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-5 text-xs text-muted-foreground"><p>{companyName}</p><p role="status" aria-live="polite" className="flex items-center gap-2"><span className={cn('h-1.5 w-1.5 rounded-full', loading ? 'bg-amber-500' : data.errors.length ? 'bg-destructive' : 'bg-primary')} />{loading ? 'Consultando informações...' : data.updatedAt ? `Última consulta às ${data.updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}${data.errors.length ? ' · Dados parciais' : ''}` : 'Aguardando conexão'}</p></footer>
+          <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-5 text-xs text-muted-foreground"><p>{companyName}</p><p role="status" aria-live="polite" className="flex items-center gap-2"><span className={cn('h-1.5 w-1.5 rounded-full', loading ? 'bg-amber-500' : data.errors.length ? 'bg-destructive' : 'bg-primary')} />{loading ? 'Verificando sessão...' : data.updatedAt ? `Sessão verificada às ${data.updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} · Dados comerciais pendentes` : 'Verificação da sessão indisponível'}</p></footer>
         </main>
       </div>
     </div>
